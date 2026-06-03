@@ -1,15 +1,21 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .const import DOMAIN, LOGGER
 
 from homeassistant.components.sensor import (
+    SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import PERCENTAGE
+from homeassistant.const import (
+    PERCENTAGE,
+    SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+    UnitOfInformation,
+    UnitOfTime,
+)
 
 from .entity import AlfeedoEntity
 
@@ -30,6 +36,43 @@ ENTITY_FILL_LEVEL_DESCRIPTIONS = (
         name="Feeder Fill Level",
         icon="mdi:cat",
         native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+)
+
+# Nieuwe diagnostische sensoren — data komt van de 5 extra velden in CatServerApi.cpp
+ENTITY_DIAGNOSTIC_DESCRIPTIONS = (
+    SensorEntityDescription(
+        key="wifiRssi",
+        name="WiFi Signal Strength",
+        icon="mdi:wifi",
+        native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+        device_class=SensorDeviceClass.SIGNAL_STRENGTH,
+        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    SensorEntityDescription(
+        key="wifiSsid",
+        name="WiFi SSID",
+        icon="mdi:wifi",
+    ),
+    SensorEntityDescription(
+        key="ipAddress",
+        name="IP Address",
+        icon="mdi:ip-network",
+    ),
+    SensorEntityDescription(
+        key="uptime",
+        name="Uptime",
+        icon="mdi:timer-outline",
+        native_unit_of_measurement=UnitOfTime.SECONDS,
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+    ),
+    SensorEntityDescription(
+        key="freeHeap",
+        name="Free Heap Memory",
+        icon="mdi:memory",
+        native_unit_of_measurement=UnitOfInformation.BYTES,
         state_class=SensorStateClass.MEASUREMENT,
     ),
 )
@@ -55,6 +98,13 @@ async def async_setup_entry(
             entity_description=entity_description,
         )
         for entity_description in ENTITY_FILL_LEVEL_DESCRIPTIONS
+    )
+    async_add_entities(
+        AlfeedoDiagnosticSensor(
+            coordinator=entry.runtime_data.coordinator,
+            entity_description=entity_description,
+        )
+        for entity_description in ENTITY_DIAGNOSTIC_DESCRIPTIONS
     )
 
 
@@ -132,3 +182,27 @@ class AlfeedoFillLevelSensor(AlfeedoEntity, SensorEntity):
             return float(value)
         except (TypeError, ValueError):
             return None
+
+
+class AlfeedoDiagnosticSensor(AlfeedoEntity, SensorEntity):
+    """Generieke sensor voor diagnostische waarden van de ESP32."""
+
+    def __init__(
+        self,
+        coordinator: AlfeedoDataUpdateCoordinator,
+        entity_description: SensorEntityDescription,
+    ) -> None:
+        """Initialize the sensor class."""
+        super().__init__(coordinator)
+        self.entity_description = entity_description
+        entry_uid = (
+            getattr(coordinator.config_entry, "unique_id", None)
+            or coordinator.config_entry.entry_id
+        )
+        self._attr_unique_id = f"{entry_uid}_{entity_description.key}"
+        LOGGER.debug("alfeedo.sensor: created diagnostic sensor entity %s", self._attr_unique_id)
+
+    @property
+    def native_value(self) -> str | int | float | None:
+        """Return the value from the coordinator data using the entity key."""
+        return self.coordinator.data.get(self.entity_description.key)
