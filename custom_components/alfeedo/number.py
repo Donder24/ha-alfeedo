@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 import aiohttp
 
 from homeassistant.components.number import (
-    NumberDeviceClass,
     NumberEntity,
     NumberEntityDescription,
     NumberMode,
@@ -23,48 +22,49 @@ if TYPE_CHECKING:
     from .data import AlfeedoConfigEntry
 
 
+# Volgorde hier bepaalt de volgorde in HA — reset staat niet hier, die zit in button.py
 MOTOR_NUMBERS = (
-    {
-        "description": NumberEntityDescription(
-            key="speed",
-            name="Motor Speed",
-            icon="mdi:speedometer",
-            native_min_value=0.1,
-            native_max_value=1.0,
-            native_step=0.05,
-            entity_category=EntityCategory.CONFIG,
-            mode=NumberMode.SLIDER,
-        ),
-        "api_key": "speed",
-        "endpoint": "motor",
-    },
     {
         "description": NumberEntityDescription(
             key="revolutionsPerPortion",
             name="Meal Size (revolutions)",
             icon="mdi:food-drumstick-outline",
-            native_min_value=0.1,
-            native_max_value=10.0,
             native_step=0.1,
             entity_category=EntityCategory.CONFIG,
             mode=NumberMode.SLIDER,
         ),
         "api_key": "revolutionsPerPortion",
         "endpoint": "motor",
+        "min_key": "minRevolutionsPerPortion",
+        "max_key": "maxRevolutionsPerPortion",
     },
     {
         "description": NumberEntityDescription(
             key="revolutionsPerSnack",
             name="Snack Size (revolutions)",
             icon="mdi:food-apple-outline",
-            native_min_value=0.1,
-            native_max_value=10.0,
             native_step=0.1,
             entity_category=EntityCategory.CONFIG,
             mode=NumberMode.SLIDER,
         ),
         "api_key": "revolutionsPerSnack",
         "endpoint": "motor",
+        "min_key": "minRevolutionsPerPortion",
+        "max_key": "maxRevolutionsPerPortion",
+    },
+    {
+        "description": NumberEntityDescription(
+            key="speed",
+            name="Motor Speed",
+            icon="mdi:speedometer",
+            native_step=0.05,
+            entity_category=EntityCategory.CONFIG,
+            mode=NumberMode.SLIDER,
+        ),
+        "api_key": "speed",
+        "endpoint": "motor",
+        "min_key": "minSpeed",
+        "max_key": "maxSpeed",
     },
 )
 
@@ -83,6 +83,8 @@ FILLSENSOR_NUMBERS = (
         ),
         "api_key": "fullMeasurement",
         "endpoint": "fillsensor",
+        "min_key": None,
+        "max_key": None,
     },
     {
         "description": NumberEntityDescription(
@@ -98,6 +100,8 @@ FILLSENSOR_NUMBERS = (
         ),
         "api_key": "emptyMeasurement",
         "endpoint": "fillsensor",
+        "min_key": None,
+        "max_key": None,
     },
 )
 
@@ -120,6 +124,8 @@ async def async_setup_entry(
                 entity_description=item["description"],
                 api_key=item["api_key"],
                 endpoint=item["endpoint"],
+                min_key=item["min_key"],
+                max_key=item["max_key"],
             )
         )
     async_add_entities(entities)
@@ -135,12 +141,16 @@ class AlfeedoNumber(AlfeedoEntity, NumberEntity):
         entity_description: NumberEntityDescription,
         api_key: str,
         endpoint: str,
+        min_key: str | None,
+        max_key: str | None,
     ) -> None:
         super().__init__(coordinator)
         self.entity_description = entity_description
         self._client = client
         self._api_key = api_key
         self._endpoint = endpoint
+        self._min_key = min_key
+        self._max_key = max_key
 
         entry_uid = (
             getattr(coordinator.config_entry, "unique_id", None)
@@ -149,8 +159,26 @@ class AlfeedoNumber(AlfeedoEntity, NumberEntity):
         self._attr_unique_id = f"{entry_uid}_{entity_description.key}"
 
     @property
+    def native_min_value(self) -> float:
+        """Min waarde dynamisch uit coordinator (bv. minSpeed van ESP32)."""
+        if self._min_key and self.coordinator.data:
+            val = self.coordinator.data.get(self._min_key)
+            if val is not None:
+                return float(val)
+        return self.entity_description.native_min_value or 0.0
+
+    @property
+    def native_max_value(self) -> float:
+        """Max waarde dynamisch uit coordinator (bv. maxSpeed van ESP32)."""
+        if self._max_key and self.coordinator.data:
+            val = self.coordinator.data.get(self._max_key)
+            if val is not None:
+                return float(val)
+        return self.entity_description.native_max_value or 100.0
+
+    @property
     def native_value(self) -> float | None:
-        """Waarde komt nu rechtstreeks uit de coordinator data."""
+        """Huidige waarde uit coordinator data."""
         value = self.coordinator.data.get(self._api_key)
         if value is None:
             return None
@@ -171,7 +199,6 @@ class AlfeedoNumber(AlfeedoEntity, NumberEntity):
             ) as resp:
                 if resp.status == 200:
                     LOGGER.debug("Instelling %s gezet op %s", self._api_key, value)
-                    # Refresh coordinator zodat alle sliders bijwerken
                     await self.coordinator.async_request_refresh()
                 else:
                     LOGGER.warning("ESP32 weigerde instelling %s: HTTP %s", self._api_key, resp.status)
