@@ -8,6 +8,7 @@ from typing import Any
 import aiohttp
 import async_timeout
 
+import asyncio
 import logging
 
 _LOGGER = logging.getLogger(__package__)
@@ -52,32 +53,37 @@ class AlfeedoApiClient:
         self._session = session
 
     async def async_get_data(self) -> Any:
-        """Get device status from the API using the configured host."""
+        """Get all device data: status + motor settings + fillsensor settings."""
         logging.debug("AlfeedoApiClient: Fetching data from host %s", self._host)
-        url = f"http://{self._host}:80/api/status"
-        return await self._api_wrapper(
-            method="get",
-            url=url,
+
+        # Haal alle endpoints parallel op
+        status, motor, fillsensor = await asyncio.gather(
+            self._api_wrapper(method="get", url=f"http://{self._host}:80/api/status"),
+            self._api_wrapper(method="get", url=f"http://{self._host}:80/api/settings/motor"),
+            self._api_wrapper(method="get", url=f"http://{self._host}:80/api/settings/fillsensor"),
+            return_exceptions=True,
         )
 
-    async def async_set_title(self, value: str) -> Any:
-        """Get data from the API."""
-        return await self._api_wrapper(
-            method="patch",
-            url="https://jsonplaceholder.typicode.com/posts/1",
-            data={"title": value},
-            headers={"Content-type": "application/json; charset=UTF-8"},
-        )
+        # Begin met status als basis
+        result = status if isinstance(status, dict) else {}
+
+        # Voeg motor settings toe (met prefix om conflicten te vermijden)
+        if isinstance(motor, dict):
+            result.update(motor)
+
+        # Voeg fillsensor settings toe
+        if isinstance(fillsensor, dict):
+            result.update(fillsensor)
+
+        return result
 
     async def async_feed(self, mode: str) -> Any:
-        """Send feed command (snack mode) to the device."""
-        options = {}
-        options["mode"] = mode
+        """Send feed command to the device."""
         url = f"http://{self._host}:80/api/feed"
         return await self._api_wrapper(
             method="post",
             url=url,
-            data=options,
+            data={"mode": mode},
         )
 
     async def _api_wrapper(
@@ -97,21 +103,14 @@ class AlfeedoApiClient:
                     json=data,
                 )
                 _verify_response_or_raise(response)
-
                 return await response.json()
 
         except TimeoutError as exception:
             msg = f"Timeout error fetching information - {exception}"
-            raise AlfeedoApiClientCommunicationError(
-                msg,
-            ) from exception
+            raise AlfeedoApiClientCommunicationError(msg) from exception
         except (aiohttp.ClientError, socket.gaierror) as exception:
             msg = f"Error fetching information - {exception}"
-            raise AlfeedoApiClientCommunicationError(
-                msg,
-            ) from exception
+            raise AlfeedoApiClientCommunicationError(msg) from exception
         except Exception as exception:  # pylint: disable=broad-except
             msg = f"Something really wrong happened! - {exception}"
-            raise AlfeedoApiClientError(
-                msg,
-            ) from exception
+            raise AlfeedoApiClientError(msg) from exception
