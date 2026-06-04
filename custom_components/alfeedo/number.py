@@ -11,7 +11,6 @@ from homeassistant.components.number import (
     NumberEntityDescription,
     NumberMode,
 )
-from homeassistant.const import UnitOfLength
 from homeassistant.helpers.entity import EntityCategory
 
 from .const import LOGGER
@@ -24,7 +23,6 @@ if TYPE_CHECKING:
     from .data import AlfeedoConfigEntry
 
 
-# Elke instelling heeft een api_key (JSON veld), endpoint en min/max/step
 MOTOR_NUMBERS = (
     {
         "description": NumberEntityDescription(
@@ -128,7 +126,7 @@ async def async_setup_entry(
 
 
 class AlfeedoNumber(AlfeedoEntity, NumberEntity):
-    """Instelbare waarde die rechtstreeks naar de ESP32 API wordt gestuurd."""
+    """Instelbare waarde — leest uit coordinator, schrijft naar ESP32 API."""
 
     def __init__(
         self,
@@ -143,7 +141,6 @@ class AlfeedoNumber(AlfeedoEntity, NumberEntity):
         self._client = client
         self._api_key = api_key
         self._endpoint = endpoint
-        self._current_value: float | None = None
 
         entry_uid = (
             getattr(coordinator.config_entry, "unique_id", None)
@@ -153,30 +150,17 @@ class AlfeedoNumber(AlfeedoEntity, NumberEntity):
 
     @property
     def native_value(self) -> float | None:
-        """Huidige waarde — opgehaald bij setup via de settings API."""
-        return self._current_value
-
-    async def async_added_to_hass(self) -> None:
-        """Haal de huidige waarde op bij het laden."""
-        await super().async_added_to_hass()
-        await self._fetch_current_value()
-
-    async def _fetch_current_value(self) -> None:
-        """Haal de huidige instellingen op van de ESP32."""
+        """Waarde komt nu rechtstreeks uit de coordinator data."""
+        value = self.coordinator.data.get(self._api_key)
+        if value is None:
+            return None
         try:
-            host = self._client._host
-            url = f"http://{host}:80/api/settings/{self._endpoint}"
-            async with self._client._session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                data = await resp.json()
-                value = data.get(self._api_key)
-                if value is not None:
-                    self._current_value = float(value)
-                    self.async_write_ha_state()
-        except Exception as err:
-            LOGGER.warning("Kon instellingen niet ophalen van %s: %s", self._endpoint, err)
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     async def async_set_native_value(self, value: float) -> None:
-        """Stuur de nieuwe waarde naar de ESP32."""
+        """Stuur de nieuwe waarde naar de ESP32 en refresh coordinator."""
         try:
             host = self._client._host
             url = f"http://{host}:80/api/settings/{self._endpoint}"
@@ -186,9 +170,9 @@ class AlfeedoNumber(AlfeedoEntity, NumberEntity):
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
                 if resp.status == 200:
-                    self._current_value = value
-                    self.async_write_ha_state()
                     LOGGER.debug("Instelling %s gezet op %s", self._api_key, value)
+                    # Refresh coordinator zodat alle sliders bijwerken
+                    await self.coordinator.async_request_refresh()
                 else:
                     LOGGER.warning("ESP32 weigerde instelling %s: HTTP %s", self._api_key, resp.status)
         except Exception as err:
