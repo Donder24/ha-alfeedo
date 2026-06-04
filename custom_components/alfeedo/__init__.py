@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.BUTTON,
+    Platform.NUMBER,   # ← nieuw: motor- en fillsensor instellingen
 ]
 
 URL_BASE = "/alfeedo/ui"
@@ -94,13 +95,11 @@ async def _register_lovelace_resource(hass: HomeAssistant):
     """Register the custom card as a Lovelace resource."""
     resources = hass.data.get("lovelace", {}).resources
 
-    # If the user is using YAML mode, we can't add it programmatically
     if not resources or not hasattr(resources, "async_create_item"):
         return
 
     url = f"{URL_BASE}/ha-alfeedo.js"
 
-    # Check if already exists to avoid duplicates
     if not any(res.get("url") == url for res in resources.async_items()):
         LOGGER.info("Registering Alfeedo card resource at %s", url)
         await resources.async_create_item(
