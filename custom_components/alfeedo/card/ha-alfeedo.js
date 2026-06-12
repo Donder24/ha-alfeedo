@@ -50,6 +50,124 @@ template.innerHTML = `
       .status-error {
         color: #f44336;
       }
+
+      /* Timer sectie */
+      .timer-section {
+        margin-top: 16px;
+        border-top: 1px solid var(--divider-color);
+        padding-top: 12px;
+      }
+
+      .timer-section-title {
+        font-weight: 500;
+        font-size: 14px;
+        color: var(--secondary-text-color);
+        margin-bottom: 8px;
+      }
+
+      .timer-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 10px;
+      }
+
+      .timer-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: var(--secondary-background-color);
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-size: 13px;
+      }
+
+      .timer-row .timer-time {
+        font-weight: 600;
+        color: var(--primary-text-color);
+      }
+
+      .timer-row .timer-mode {
+        color: var(--secondary-text-color);
+        font-size: 12px;
+        margin-left: 8px;
+      }
+
+      .timer-delete {
+        background: none;
+        border: none;
+        color: var(--error-color, #f44336);
+        cursor: pointer;
+        font-size: 16px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        line-height: 1;
+      }
+
+      .timer-delete:hover {
+        background: var(--error-color, #f44336);
+        color: white;
+      }
+
+      .timer-add {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        margin-top: 4px;
+      }
+
+      .timer-add input[type="time"] {
+        flex: 1;
+        padding: 6px 8px;
+        border: 1px solid var(--divider-color);
+        border-radius: 6px;
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+        font-size: 13px;
+      }
+
+      .timer-add select {
+        padding: 6px 8px;
+        border: 1px solid var(--divider-color);
+        border-radius: 6px;
+        background: var(--card-background-color);
+        color: var(--primary-text-color);
+        font-size: 13px;
+      }
+
+      .timer-add-btn {
+        background: var(--primary-color);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        padding: 6px 12px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+      }
+
+      .timer-add-btn:hover {
+        opacity: 0.85;
+      }
+
+      .timer-add-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      .timer-empty {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+        text-align: center;
+        padding: 8px 0;
+      }
+
+      .timer-max {
+        font-size: 11px;
+        color: var(--secondary-text-color);
+        text-align: right;
+        margin-top: 4px;
+      }
     </style>
     <ha-card>
       <div class="header">
@@ -68,6 +186,20 @@ template.innerHTML = `
           <ha-button class="meal" unelevated>Dispense Meal</ha-button>
           <ha-button class="snack" outlined>Dispense Snack</ha-button>
         </div>
+      </div>
+
+      <div class="timer-section">
+        <div class="timer-section-title">⏰ Timers</div>
+        <div class="timer-list" id="timer_list"></div>
+        <div class="timer-add">
+          <input type="time" id="timer_time" value="08:00">
+          <select id="timer_mode">
+            <option value="meal">Meal</option>
+            <option value="snack">Snack</option>
+          </select>
+          <button class="timer-add-btn" id="timer_add_btn">+</button>
+        </div>
+        <div class="timer-max" id="timer_max"></div>
       </div>
     </ha-card>
   `;
@@ -95,7 +227,7 @@ class AlfeedoCard extends HTMLElement {
   connectedCallback() {
     this._ensureRoot();
     if (this._config && this._hass) {
-      this.hass = this._hass; // trigger render with current hass
+      this.hass = this._hass;
     }
   }
 
@@ -103,6 +235,10 @@ class AlfeedoCard extends HTMLElement {
     if (this._root) return;
     this._root = this.attachShadow({ mode: "open" });
     this._root.appendChild(template.content.cloneNode(true));
+
+    // Timer add knop
+    const addBtn = this._root.getElementById("timer_add_btn");
+    if (addBtn) addBtn.onclick = () => this._addTimer();
   }
 
   _el(id) {
@@ -117,7 +253,6 @@ class AlfeedoCard extends HTMLElement {
     }
     this._config = config;
 
-    // Ensure DOM exists before trying to update elements
     this._ensureRoot();
 
     const titleEl = this._el("title");
@@ -146,7 +281,6 @@ class AlfeedoCard extends HTMLElement {
   _pressButton(feedingType) {
     if (!this._hass || !this._config.entity) return;
 
-    // Prefer optional explicit button entity configs. If not set, guess from main entity (state sensor)
     let buttonId;
     if (feedingType === 'meal' && this._config.meal_button) {
       buttonId = this._config.meal_button;
@@ -159,8 +293,62 @@ class AlfeedoCard extends HTMLElement {
     this._hass.callService("button", "press", { entity_id: buttonId });
   }
 
+  _addTimer() {
+    if (!this._hass) return;
+    const timeInput = this._el("timer_time");
+    const modeInput = this._el("timer_mode");
+    if (!timeInput || !modeInput) return;
+
+    const time = timeInput.value;
+    const mode = modeInput.value;
+    if (!time) return;
+
+    const addBtn = this._el("timer_add_btn");
+    if (addBtn) addBtn.disabled = true;
+
+    this._hass.callService("alfeedo", "add_timer", { time, mode }).then(() => {
+      if (addBtn) addBtn.disabled = false;
+    }).catch(() => {
+      if (addBtn) addBtn.disabled = false;
+    });
+  }
+
+  _deleteTimer(timerId) {
+    if (!this._hass) return;
+    this._hass.callService("alfeedo", "delete_timer", { timer_id: timerId });
+  }
+
+  _renderTimers(timers, maxTimers) {
+    const list = this._el("timer_list");
+    const maxEl = this._el("timer_max");
+    if (!list) return;
+
+    list.innerHTML = "";
+
+    if (!timers || timers.length === 0) {
+      list.innerHTML = `<div class="timer-empty">Geen timers ingesteld</div>`;
+    } else {
+      timers.forEach(timer => {
+        const row = document.createElement("div");
+        row.className = "timer-row";
+        row.innerHTML = `
+          <span class="timer-time">${timer.time}</span>
+          <span class="timer-mode">${timer.mode}</span>
+          <button class="timer-delete" title="Verwijder timer">✕</button>
+        `;
+        row.querySelector(".timer-delete").onclick = () => this._deleteTimer(timer.id);
+        list.appendChild(row);
+      });
+    }
+
+    // Verberg add knop als max bereikt
+    const addBtn = this._el("timer_add_btn");
+    if (addBtn) addBtn.disabled = timers && timers.length >= maxTimers;
+
+    if (maxEl) maxEl.textContent = `${timers ? timers.length : 0} / ${maxTimers} timers`;
+  }
+
   set hass(hass) {
-    console.debug("************* render called")
     this._hass = hass;
     if (!this._config) return;
 
@@ -178,10 +366,9 @@ class AlfeedoCard extends HTMLElement {
       return;
     }
 
-    const stateObj = hass.states[entity]; // Define this BEFORE using it
+    const stateObj = hass.states[entity];
     const value = stateObj.state;
 
-    // 3. Update UI
     if (stateLabel) stateLabel.textContent = value;
 
     const fill_level = stateObj.attributes.fill_level;
@@ -226,10 +413,20 @@ class AlfeedoCard extends HTMLElement {
     if (lastUpdated) {
       lastUpdated.textContent = stateObj.last_updated ? new Date(stateObj.last_updated).toLocaleString() : "";
     }
+
+    // Timers ophalen uit de timers sensor
+    const timerEntity = this._config.timers_entity ||
+      entity.replace("_feeder_state", "_timers");
+    if (timerEntity && hass.states[timerEntity]) {
+      const timerState = hass.states[timerEntity];
+      const timers = timerState.attributes.timers || [];
+      const maxTimers = timerState.attributes.max_timers || 10;
+      this._renderTimers(timers, maxTimers);
+    }
   }
 
   getCardSize() {
-    return 3;
+    return 4;
   }
 
   formatTime(totalMinutes) {
@@ -247,17 +444,13 @@ class AlfeedoCard extends HTMLElement {
 class AlfeedoCardEditor extends HTMLElement {
   constructor() {
     super();
-    // Defer attaching shadow root to avoid early DOM initialization
-    // Shadow will be created in _render when needed
   }
 
-  // 1. HA calls this when the config changes
   setConfig(config) {
     this._config = config;
     this._render();
   }
 
-  // 2. HA calls this to pass the hass object
   set hass(hass) {
     this._hass = hass;
     this._render();
@@ -295,6 +488,11 @@ class AlfeedoCardEditor extends HTMLElement {
         label: "Snack Button (Optional)",
         selector: { entity: { domain: "button", integration: "alfeedo" } }
       },
+      {
+        name: "timers_entity",
+        label: "Timers Sensor (Optional)",
+        selector: { entity: { domain: "sensor", integration: "alfeedo" } }
+      },
       { name: "image", label: "Custom Image URL", selector: { text: {} } }
     ];
 
@@ -304,7 +502,6 @@ class AlfeedoCardEditor extends HTMLElement {
   }
 
   _valueChanged(ev) {
-    // Standard event to save card settings
     const event = new CustomEvent("config-changed", {
       detail: { config: ev.detail.value },
       bubbles: true,
@@ -314,7 +511,6 @@ class AlfeedoCardEditor extends HTMLElement {
   }
 }
 
-// Define only if not already registered (defensive)
 if (!customElements.get("alfeedo-card")) {
   customElements.define("alfeedo-card", AlfeedoCard);
   console.debug("alfeedo-card: defined");
@@ -324,7 +520,6 @@ if (!customElements.get("alfeedo-card")) {
 
 customElements.define("alfeedo-card-editor", AlfeedoCardEditor);
 
-// Expose constructors globally and log when the custom element is defined.
 window.AlfeedoCard = AlfeedoCard;
 window.AlfeedoCardEditor = AlfeedoCardEditor;
 customElements.whenDefined('alfeedo-card').then(() => console.debug('alfeedo-card: whenDefined'));
