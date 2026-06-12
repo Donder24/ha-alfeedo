@@ -117,9 +117,7 @@ class AlfeedoResetButton(AlfeedoEntity, ButtonEntity):
         try:
             host = self._client._host
             url = f"http://{host}:80/api/reset"
-            async with self._client._session.post(
-                url, timeout=10
-            ) as resp:
+            async with self._client._session.post(url, timeout=10) as resp:
                 if resp.status == 200:
                     LOGGER.info("ESP32 herstart gestuurd")
                 else:

@@ -201,6 +201,10 @@ class AlfeedoNumber(AlfeedoEntity, NumberEntity):
                     LOGGER.debug("Instelling %s gezet op %s", self._api_key, value)
                     await self.coordinator.async_request_refresh()
                 else:
-                    LOGGER.warning("ESP32 weigerde instelling %s: HTTP %s", self._api_key, resp.status)
+                    LOGGER.warning(
+                        "ESP32 weigerde instelling %s: HTTP %s",
+                        self._api_key,
+                        resp.status,
+                    )
         except Exception as err:
             LOGGER.error("Fout bij instellen van %s: %s", self._api_key, err)

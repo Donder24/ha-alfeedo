@@ -117,9 +117,9 @@ async def async_setup_entry(
         )
         for entity_description in ENTITY_DIAGNOSTIC_DESCRIPTIONS
     )
-    async_add_entities([
-        AlfeedoTimersSensor(coordinator=entry.runtime_data.coordinator)
-    ])
+    async_add_entities(
+        [AlfeedoTimersSensor(coordinator=entry.runtime_data.coordinator)]
+    )
 
 
 class AlfeedoStateSensor(AlfeedoEntity, SensorEntity):
@@ -205,7 +205,9 @@ class AlfeedoDiagnosticSensor(AlfeedoEntity, SensorEntity):
             or coordinator.config_entry.entry_id
         )
         self._attr_unique_id = f"{entry_uid}_{entity_description.key}"
-        LOGGER.debug("alfeedo.sensor: created diagnostic sensor entity %s", self._attr_unique_id)
+        LOGGER.debug(
+            "alfeedo.sensor: created diagnostic sensor entity %s", self._attr_unique_id
+        )
 
     @property
     def native_value(self) -> str | int | float | None:

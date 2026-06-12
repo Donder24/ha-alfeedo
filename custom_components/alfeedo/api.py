@@ -58,8 +58,12 @@ class AlfeedoApiClient:
 
         status, motor, fillsensor, timers = await asyncio.gather(
             self._api_wrapper(method="get", url=f"http://{self._host}:80/api/status"),
-            self._api_wrapper(method="get", url=f"http://{self._host}:80/api/settings/motor"),
-            self._api_wrapper(method="get", url=f"http://{self._host}:80/api/settings/fillsensor"),
+            self._api_wrapper(
+                method="get", url=f"http://{self._host}:80/api/settings/motor"
+            ),
+            self._api_wrapper(
+                method="get", url=f"http://{self._host}:80/api/settings/fillsensor"
+            ),
             self._api_wrapper(method="get", url=f"http://{self._host}:80/api/timers"),
             return_exceptions=True,
         )
