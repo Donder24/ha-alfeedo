@@ -90,7 +90,7 @@ ENTITY_DIAGNOSTIC_DESCRIPTIONS = (
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,  # noqa: ARG001 Unused function argument: `hass`
+    hass: HomeAssistant,
     entry: AlfeedoConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
@@ -117,6 +117,9 @@ async def async_setup_entry(
         )
         for entity_description in ENTITY_DIAGNOSTIC_DESCRIPTIONS
     )
+    async_add_entities([
+        AlfeedoTimersSensor(coordinator=entry.runtime_data.coordinator)
+    ])
 
 
 class AlfeedoStateSensor(AlfeedoEntity, SensorEntity):
@@ -207,3 +210,43 @@ class AlfeedoDiagnosticSensor(AlfeedoEntity, SensorEntity):
     @property
     def native_value(self) -> str | int | float | None:
         return self.coordinator.data.get(self.entity_description.key)
+
+
+class AlfeedoTimersSensor(AlfeedoEntity, SensorEntity):
+    """Sensor die de lijst van timers toont en beschikbaar maakt voor de kaart."""
+
+    _attr_name = "Timers"
+    _attr_icon = "mdi:clock-outline"
+
+    def __init__(self, coordinator: AlfeedoDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        entry_uid = (
+            getattr(coordinator.config_entry, "unique_id", None)
+            or coordinator.config_entry.entry_id
+        )
+        self._attr_unique_id = f"{entry_uid}_timers"
+
+    @property
+    def native_value(self) -> int:
+        """Aantal actieve timers als hoofdwaarde."""
+        timers = self.coordinator.data.get("timers", [])
+        return len(timers)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        timers = self.coordinator.data.get("timers", [])
+        max_timers = self.coordinator.data.get("maxTimers", 10)
+        # Converteer minuten naar HH:MM voor leesbaarheid
+        timers_formatted = [
+            {
+                "id": t.get("id"),
+                "time": f"{t.get('time', 0) // 60:02d}:{t.get('time', 0) % 60:02d}",
+                "time_minutes": t.get("time"),
+                "mode": t.get("mode"),
+            }
+            for t in timers
+        ]
+        return {
+            "timers": timers_formatted,
+            "max_timers": max_timers,
+        }
